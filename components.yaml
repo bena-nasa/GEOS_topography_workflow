@@ -1,22 +1,22 @@
 ESMA_env:
-  local: ./ESMA_env
+  local: ./@env
   remote: git@github.com:GEOS-ESM/ESMA_env.git
   tag: v4.24.0
   develop: main
 
 ESMA_cmake:
-  local: ./ESMA_cmake
+  local: ./@cmake
   remote: git@github.com:GEOS-ESM/ESMA_cmake.git
   tag: v3.40.0
   develop: develop
 
 ecbuild:
-  local: ./ESMA_cmake/ecbuild
+  local: ./@cmake/ecbuild
   remote: git@github.com:GEOS-ESM/ecbuild.git
   tag: geos/v1.3.0
 
 MAPL:
-  local: ./ESMA_MAPL
+  local: ./@MAPL
   remote: git@github.com:GEOS-ESM/MAPL.git
   tag: v2.44.0
   develop: develop

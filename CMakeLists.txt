@@ -4,8 +4,13 @@ cmake_policy (SET CMP0054 NEW)
 
 project (
   GMAO_TOPO
-  VERSION 2.34.3
+  VERSION 1.0.0
   LANGUAGES Fortran CXX C)  # Note - CXX is required for ESMF
+
+if ("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
+   message(SEND_ERROR "In-source builds are disabled. Please
+           issue cmake command in separate build directory.")
+endif ("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
 
 # Set the default build type to release
 if (NOT CMAKE_BUILD_TYPE)
@@ -17,58 +22,15 @@ if (NOT CMAKE_BUILD_TYPE)
 endif ()
 
 # mepo can now clone subrepos in three styles
-set (ESMA_CMAKE_DIRS
-  ESMA_cmake
-  @ESMA_cmake
-  ESMA_cmake@
-  )
-
-foreach (dir IN LISTS ESMA_CMAKE_DIRS)
+foreach (dir cmake @cmake cmake@)
   if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/${dir})
     list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/${dir}")
     set (ESMA_CMAKE_PATH "${CMAKE_CURRENT_LIST_DIR}/${dir}" CACHE PATH "Path to ESMA_cmake code")
-    include (esma)
-    set(GMAO_TOPO_STANDALONE TRUE)
   endif ()
 endforeach ()
+include (esma)
 
-# build as standalone project
-if (NOT COMMAND esma)
-  include (esma OPTIONAL)
-endif ()
-
-if (NOT COMMAND esma)
-
-  if (SKIP_MEPO)
-    message (FATAL_ERROR "ESMA not found")
-  else ()
-    set (MEPO_CLONE_COMMAND mepo clone)
-    execute_process (
-      COMMAND ${MEPO_CLONE_COMMAND}
-      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-      )
-    foreach (dir IN LISTS ESMA_CMAKE_DIRS)
-      if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/${dir})
-        list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/${dir}")
-        include (esma)
-        set(GMAO_TOPO_STANDALONE TRUE)
-      endif ()
-    endforeach ()
-    option (SKIP_MEPO "Set to skip mepo steps" ON)
-  endif ()
-
-endif ()
-
-option (BUILD_SHARED_GMAO_TOPO "Build shared GMAO_TOPO libraries" ON)
-if (BUILD_SHARED_GMAO_TOPO)
-  set (GMAO_TOPO_LIBRARY_TYPE SHARED)
-else ()
-  set (GMAO_TOPO_LIBRARY_TYPE STATIC)
-endif()
-message (STATUS "Building GMAO_TOPO as ${GMAO_TOPO_LIBRARY_TYPE} libraries")
-
-ecbuild_declare_project()
-
+# Add CMake for when not using Baselibs
 if (NOT Baselibs_FOUND)
   set(MPI_DETERMINE_LIBRARY_VERSION TRUE)
   find_package(MPI)
@@ -85,9 +47,19 @@ if (NOT Baselibs_FOUND)
   endif()
 
   if (NOT TARGET esmf)
-    find_package(ESMF 8.4.0 MODULE REQUIRED)
+    if (DEFINED ENV{esmf_ROOT})
+      message (STATUS "Found esmf_ROOT in environment: $ENV{esmf_ROOT}")
+      find_path(ESMF_CMAKE_PATH FindESMF.cmake HINTS "$ENV{esmf_ROOT}/cmake")
+      message (STATUS "Found FindESMF.cmake in: ${ESMF_CMAKE_PATH}")
+      if (ESMF_CMAKE_PATH)
+        message (STATUS "Appending to CMAKE_PREFIX_PATH: ${ESMF_CMAKE_PATH}")
+        list (APPEND CMAKE_MODULE_PATH ${ESMF_CMAKE_PATH})
+      endif ()
+    endif ()
 
-    # ESMF as used in GMAO_TOPO requires MPI
+    find_package(ESMF MODULE REQUIRED)
+
+    # ESMF as used in MAPL requires MPI
     # NOTE: This looks odd because some versions of FindESMF.cmake out in the
     #       world provide an "esmf" target while others provide "ESMF". So we
     #       need this ugliness to support both.
@@ -95,94 +67,43 @@ if (NOT Baselibs_FOUND)
       target_link_libraries(esmf INTERFACE MPI::MPI_Fortran)
     else()
       target_link_libraries(ESMF INTERFACE MPI::MPI_Fortran)
-      # GMAO_TOPO and GEOS use lowercase target due to historical reasons but
+      # MAPL and GEOS use lowercase target due to historical reasons but
       # the latest FindESMF.cmake file from ESMF produces an ESMF target.
       add_library(esmf ALIAS ESMF)
     endif()
   endif ()
+
+  find_package(GFTL_SHARED REQUIRED)
+
+  find_package(ZLIB REQUIRED)
+  # Another issue with historical reasons, old/wrong zlib target used in GEOS
+  add_library(ZLIB::zlib ALIAS ZLIB::ZLIB)
+
+  # Using FMS from spack requires updates to fvdycore due to interface changes
+  # in FMS 2022. This is commented for now until this transition can occur.
+  #################################################
+  # find_package(FMS QUIET COMPONENTS R4 R8)      #
+  # if (FMS_FOUND)                                #
+  #   # We need aliases due to historical reasons #
+  #   add_library(fms_r4 ALIAS FMS::fms_r4)       #
+  #   add_library(fms_r8 ALIAS FMS::fms_r8)       #
+  # endif ()                                      #
+  #################################################
+
 endif ()
 
-# We wish to add extra flags when compiling as Debug. We should only
-# do this if we are using esma_cmake since the flags are defined
-# there. Note that some flags like STANDARD_F18 might be available on
-# all compilers, but others might only be needed for, say, Intel, since,
-# for example, GNU does not allow if(integer) no matter what
-if (COMMAND esma)
-  set (STRICT_DEBUG_FLAGS
-    ${STANDARD_F18}
-    ${ERROR_IF_INTEGER}
-    ${ERROR_LOGICAL_SET_TO_INTEGER}
-    ${DISABLE_LONG_LINE_LENGTH_WARNING}
-    )
+ecbuild_declare_project()
 
-  # Are we compiling Fortran?
-  set (is_fortran "$<COMPILE_LANGUAGE:Fortran>")
-  # and is our build type Debug?
-  set (is_build_type_debug "$<STREQUAL:${CMAKE_BUILD_TYPE},Debug>")
-  # set the logical AND
-  set (meets_requirements "$<AND:${is_fortran},${is_build_type_debug}>")
+# Generic DFLAGS
+# These should be relocated and/or eliminated.
+add_definitions(-Dsys${CMAKE_SYSTEM_NAME} -DESMA64)
+add_definitions(${MPI_Fortran_COMPILE_FLAGS})
+include_directories(${MPI_Fortran_INCLUDE_PATH})
 
-  foreach (flag ${STRICT_DEBUG_FLAGS})
-    # We use SHELL to avoid de-duplication and preserve spaces:
-    #   https://cmake.org/cmake/help/latest/command/target_compile_options.html?highlight=target_compile_options#option-de-duplication
-    add_compile_options("SHELL:$<${meets_requirements}:${flag}>")
-  endforeach ()
-endif ()
-
-if (BUILD_WITH_PFLOGGER)
-  add_definitions(-DBUILD_WITH_PFLOGGER)
-else ()
-  add_subdirectory (pflogger_stub)
-endif ()
-
-add_definitions(-Dsys${CMAKE_SYSTEM_NAME})
-
-# Special case - GMAO_TOPO_cfio is built twice with two different precisions.
-add_subdirectory (GMAO_TOPO_cfio GMAO_TOPO_cfio_r4)
-add_subdirectory (GMAO_TOPO_cfio GMAO_TOPO_cfio_r8)
-
-add_subdirectory (pfio)
-add_subdirectory (profiler)
-add_subdirectory (generic)
-add_subdirectory (oomph) # temporary - will rename to generic when done
-add_subdirectory (shared)
-add_subdirectory (include)
-add_subdirectory (base)
-add_subdirectory (GMAO_TOPO)
-add_subdirectory (gridcomps)
-add_subdirectory (griddedio)
-if (BUILD_WITH_FLAP)
-   add_subdirectory (tutorial)
-endif()
-
-if (PFUNIT_FOUND)
-  include (add_pfunit_ctest)
-  add_subdirectory (pfunit EXCLUDE_FROM_ALL)
-endif ()
-
-# Support for automated code generation
-list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
-include(GMAO_TOPO_acg)
-include(GMAO_TOPO_create_stub_component)
-add_subdirectory (Apps)
-
-add_subdirectory (Tests)
-
-# @env will exist here if GMAO_TOPO is built as itself but not as part of, say, GEOSgcm
-esma_add_subdirectory (ESMA_env FOUND ESMA_env_FOUND)
-
-# Install the Python directory
-install (
-   DIRECTORY Python
-   DESTINATION lib
-   USE_SOURCE_PERMISSIONS
-   )
-
-install (
-   DIRECTORY cmake
-   DESTINATION ${INSTALL_DATA_DIR}
-   FILES_MATCHING PATTERN "GMAO_TOPO_*.cmake"
-   )
+esma_mepo_style(env env_dir)
+esma_add_subdirectory (${env_dir})
+# Recursively build source tree
+add_subdirectory (src)
 
 # https://www.scivision.dev/cmake-auto-gitignore-build-dir/
 # --- auto-ignore build directory
@@ -196,22 +117,14 @@ install(
    DESTINATION ${CMAKE_INSTALL_PREFIX}
    )
 
-ecbuild_install_project (NAME GMAO_TOPO)
+# Adds ability to tar source
+include (esma_cpack)
 
-# This must be after ecbuild_install_project
-if (GMAO_TOPO_STANDALONE)
-  # We only care about CPack if GMAO_TOPO is a standalone
-  include (esma_cpack OPTIONAL RESULT_VARIABLE esma_cpack_FOUND)
-  if (esma_cpack_FOUND)
-    message(STATUS "esma_cpack_FOUND: ${esma_cpack_FOUND}")
-
-    # This installs a tarball of the source code
-    # in the installation directory.
-    # MUST BE THE LAST CODE IN THIS FILE
-    option(INSTALL_SOURCE_TARFILE "Create and install source tarfile" OFF)
-    if(INSTALL_SOURCE_TARFILE)
-      install(CODE "set(CMAKE_PROJECT_NAME \"${CMAKE_PROJECT_NAME}\")")
-      install(SCRIPT "${ESMA_CMAKE_PATH}/esma_postinstall.cmake")
-    endif()
-  endif ()
-endif ()
+# This installs a tarball of the source code
+# in the installation directory.
+# MUST BE THE LAST CODE IN THIS FILE
+option(INSTALL_SOURCE_TARFILE "Create and install source tarfile" OFF)
+if(INSTALL_SOURCE_TARFILE)
+  install(CODE "set(CMAKE_PROJECT_NAME \"${CMAKE_PROJECT_NAME}\")")
+  install(SCRIPT "${ESMA_CMAKE_PATH}/esma_postinstall.cmake")
+endif()
