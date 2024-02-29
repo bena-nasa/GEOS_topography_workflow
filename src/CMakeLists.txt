@@ -1,2 +1,4 @@
-add_subdirectory(Apps)
-add_subdirectory(@MAPL)
+esma_add_subdirectories(
+  Apps
+  @MAPL
+  )
