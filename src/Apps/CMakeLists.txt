@@ -28,12 +28,11 @@ if (NOT CMAKE_Fortran_COMPILER_ID MATCHES "NAG")
   target_link_libraries(convert_to_gmao_output.x PRIVATE OpenMP::OpenMP_Fortran)
 endif ()
 
-#install(
-#PROGRAMS mosaic_grid.py
-#PROGRAMS mosaic_topo.py
-#PROGRAMS combineMosaic.py
-#DESTINATION bin) 
-
 file(COPY  mosaic_grid.py DESTINATION bin)
 file(COPY  mosaic_topo.py DESTINATION bin)
 file(COPY  combineMosaic.py DESTINATION bin)
+
+esma_add_subdirectories(
+   bin_to_cube
+   cube_to_target
+   )

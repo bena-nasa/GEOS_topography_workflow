@@ -5,11 +5,7 @@ import sys
 import argparse
 import subprocess as sp
 
-# Regular cubed-sphere descriptors
-_ScriptFiles_  = "/discover/nobackup/bmauer/Cubed_Sphere_Grids_new_stretched"
-# Stretched cubed-sphere descriptors
-#_ScriptFiles_  = "/discover/nobackup/bmauer/Cubed_Sphere_Grids_stretched"
-_TopoPackage_  = "/discover/swdev/bmauer/packages/Topo-NCAR_Topo_1_1"
+_TopoPackage_  = "/home/bmauer/swdev/models/topo_workflow/GEOS_topography_workflow/install/bin"
 _c3000file_    = "output_3000.gmted_fixedanarticasuperior.nc"
 
 def _add_zero_str(tres):
@@ -33,6 +29,20 @@ def _add_zero_str(tres):
       jms=str(jm)
    return ims+"x"+jms
 
+def _generate_scrip(tres):
+   
+   im = int(tres)
+   jm = int(tres)*6
+   grid_descriptor="PE"+str(im)+"x"+str(jm)+"-CF.nc4"
+   rc_input = "CUBE_DIM: "+str(cube_res)+"\n gridname: bob \n output_script: "+grid_descriptor+"\n geost_outout: geos_cube.nc4"
+   f = open("GenScrip.rc")
+   f.write(rc_input)
+   f.close
+
+   run_cmd = "mpirun -np 6 "+_TopoPackage_+"/generate_script_cube.x"
+   sp.call(run_cmd,shell=True)
+
+
 def _bin_to_cube(topo):
    
    nl_file="&binparams\n  raw_latlon_data_file='"+topo+"'\n  output_file='"+_c3000file_+"'\n  ncube=3000\n/"
@@ -49,7 +59,7 @@ def _cube_to_target(tres,smooth_file):
    jm = int(tres)*6
    nl_file="&topoparams\n"
    grid_descriptor="/PE"+str(im)+"x"+str(jm)+"-CF.nc4"
-   nl_file=nl_file+"  grid_descriptor_fname = '"+_ScriptFiles_+grid_descriptor+"'\n"
+   nl_file=nl_file+"  grid_descriptor_fname = '"+grid_descriptor+"'\n"
    nl_file=nl_file+"  intermediate_cubed_sphere_fname = '"+_c3000file_+"'\n"
 
    if smooth_file == "/dev/null":
@@ -162,6 +172,9 @@ if __name__ == "__main__":
    outputdir = options.outputdir
 
    os.chdir(workdir)
+
+   _generate_scrip(tres)
+
    _bin_to_cube(hres_topo)
 
    output_fname=""
