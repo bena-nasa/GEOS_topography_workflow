@@ -29,20 +29,6 @@ def _add_zero_str(tres):
       jms=str(jm)
    return ims+"x"+jms
 
-def _generate_scrip(tres):
-   
-   im = int(tres)
-   jm = int(tres)*6
-   grid_descriptor="PE"+str(im)+"x"+str(jm)+"-CF.nc4"
-   rc_input = "CUBE_DIM: "+str(cube_res)+"\n gridname: bob \n output_script: "+grid_descriptor+"\n geost_outout: geos_cube.nc4"
-   f = open("GenScrip.rc")
-   f.write(rc_input)
-   f.close
-
-   run_cmd = "mpirun -np 6 "+_TopoPackage_+"/generate_script_cube.x"
-   sp.call(run_cmd,shell=True)
-
-
 def _bin_to_cube(topo):
    
    nl_file="&binparams\n  raw_latlon_data_file='"+topo+"'\n  output_file='"+_c3000file_+"'\n  ncube=3000\n/"
@@ -50,15 +36,15 @@ def _bin_to_cube(topo):
    f.write(nl_file)
    f.close()
 
-   os.system("ln -fs "+_TopoPackage_+"/bin_to_cube/landm_coslat.nc .")
-   os.system(_TopoPackage_+"/bin_to_cube/bin_to_cube")
+   os.system("ln -fs "+_TopoPackage_+"/landm_coslat.nc .")
+   os.system(_TopoPackage_+"/bin_to_cube.x")
 
 def _cube_to_target(tres,smooth_file):
 
    im = int(tres)
    jm = int(tres)*6
    nl_file="&topoparams\n"
-   grid_descriptor="/PE"+str(im)+"x"+str(jm)+"-CF.nc4"
+   grid_descriptor="PE"+str(im)+"x"+str(jm)+"-CF.nc4"
    nl_file=nl_file+"  grid_descriptor_fname = '"+grid_descriptor+"'\n"
    nl_file=nl_file+"  intermediate_cubed_sphere_fname = '"+_c3000file_+"'\n"
 
@@ -87,12 +73,12 @@ def _cube_to_target(tres,smooth_file):
    f = open("cube_to_target.nl","w")
    f.write(nl_file)
    f.close()
-   os.system(_TopoPackage_+"/cube_to_target/cube_to_target")
+   os.system(_TopoPackage_+"/cube_to_target.x")
    return output_fname
 
 def _convert_to_gmao(tres,output_fname):
-   print "bma converting ",output_fname
-   os.system(_TopoPackage_+"/convert_to_GMAO/convert_to_output_gmao.exe -i "+output_fname+" --im "+tres)
+   print("bma converting ",output_fname)
+   os.system(_TopoPackage_+"/convert_to_gmao_output.x -i "+output_fname+" --im "+tres)
 
 def _do_smoothing(tres):
 
@@ -106,7 +92,7 @@ def _do_smoothing(tres):
    inputf = "gmted_DYN_ave_"+str(im)+"x"+str(jm)+".data"
    output_prefix = "oro.C"+tres
    run_cmd = smooth_bin+"/mosaic_topo.py" + " -i "+inputf+" -o "+output_prefix+" -c "+tres
-   print run_cmd
+   print(run_cmd)
    sp.call(run_cmd,shell=True)
 
    # tile grid
@@ -144,8 +130,8 @@ def _do_smoothing(tres):
 def _convert_to_ncar(tres,inputf):
 
    outputf = "smooth_ncarformat_c"+tres+".nc"
-   print inputf
-   print outputf
+   print(inputf)
+   print(outputf)
    os.system(_TopoPackage_+"/convert_to_GMAO/convert_bin_to_netcdf.exe -i "+inputf+" --im "+tres+" --ncar "+outputf)
    return outputf
 
@@ -155,37 +141,32 @@ def _copy_final_geosoutput(outputdir,tres):
    res_str=str(im)+"x"+str(jm)
    os.system("mv gmted*"+res_str+"* "+outputdir+"/")
 
-
 if __name__ == "__main__":
 
    parser = argparse.ArgumentParser(description="generate topograph")
 
    parser.add_argument("--res",dest="tres",help="output cube resolution")
    parser.add_argument("--hres_topo",dest="hres_topo",help="high resoution topography")
-   parser.add_argument("--workdir",dest="workdir",help="working directory")
    parser.add_argument("--outputdir",dest="outputdir",help="output directory")
+   parser.add_argument("--topo_install",dest="topo_install",help="installation directory of topo packge")
 
    options = parser.parse_args()
    tres      = options.tres
    hres_topo = options.hres_topo
-   workdir   = options.workdir
    outputdir = options.outputdir
-
-   os.chdir(workdir)
-
-   _generate_scrip(tres)
+   _TopoPackage_ = options.topo_install
 
    _bin_to_cube(hres_topo)
 
    output_fname=""
    ncar_file=""
 
-   print "producing unsmoothed topography\n"
+   print("producing unsmoothed topography\n")
    output_fname = _cube_to_target(tres,"/dev/null")
-   print "converting unsmoothed topography\n"
+   print("converting unsmoothed topography\n")
    _convert_to_gmao(tres,output_fname)
 
-   print "smoothing topography\n"
+   print("smoothing topography\n")
    #output_fname = _do_smoothing(tres)
    ncar_file = _do_smoothing(tres)
 
@@ -195,9 +176,9 @@ if __name__ == "__main__":
       os.mkdir(outputdir+"/unsmoothed")
    _copy_final_geosoutput(outputdir+"/unsmoothed",tres)
 
-   print "producing smoothed topography\n"
+   print("producing smoothed topography\n")
    output_fname = _cube_to_target(tres,ncar_file)
-   print "converting smoothed topography\n"
+   print("converting smoothed topography\n")
    _convert_to_gmao(tres,output_fname)
    if not os.path.exists(outputdir+"/smoothed"):
       os.mkdir(outputdir+"/smoothed")

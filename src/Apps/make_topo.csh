@@ -7,17 +7,33 @@
 #SBATCH --account=s1873
 #SBATCH --mail-type=ALL
 
+setenv topo_package /home/bmauer/swdev/models/topo_workflow/GEOS_topography_workflow/install/bin
+#source /gpfsm/dswdev/bmauer/packages/UFS_UTILS/load_mod_discover.csh
+source ${topo_package}/g5_modules
 
-source /gpfsm/dswdev/bmauer/packages/UFS_UTILS/load_mod_discover.csh
+foreach n (180)
 
-foreach n (270 540 1080 2160)
-
-   set output_dir = /discover/nobackup/bmauer/gmted_topo/NCAR_TOPO_GMTED_UFS_SMOOTHING_STRETCH/c$n
+   set output_dir = /discover/nobackup/bmauer/tmp/topo_work
    if (! -e $output_dir) then
       mkdir $output_dir
    endif
+   cd $output_dir
+   set config_file = GenScrip.rc
+   @ jm = $n * 6
+   echo $n
+   echo $jm
+   set scripfile = PE${n}x${jm}-CF.nc4
+   echo $scripfile
+   cat << _EOF_ > ${config_file}
+CUBE_DIM: $n
+output_scrip: ${scripfile}
+output_geos: geos_cube.nc4
+_EOF_
+
+   mpirun -np 6 ${topo_package}/generate_scrip_cube.x
+
    echo "running c$n"
-   ./run_stretched_topography_ufssmoothing.py --res $n --hres_topo /discover/nobackup/bmauer/gmted_topo/gmted_fix_superior/gmted_fixed_anartica_superior_caspian.nc4 --workdir /discover/nobackup/bmauer/tmp/topo_working_dir_ufs_smooth --outputdir $output_dir
+   ${topo_package}/run_topo_generation.py --res $n --hres_topo /discover/nobackup/bmauer/gmted_topo/gmted_fix_superior/gmted_fixed_anartica_superior_caspian.nc4 --outputdir $output_dir --topo_install $topo_package
 
 end
 

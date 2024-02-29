@@ -57,7 +57,7 @@
     logical                           :: do_schmidt
     !real(ESMF_KIND_R8)                :: target_lon, target_lat, stretch_factor
     real(ESMF_KIND_R4)                :: target_lon, target_lat, stretch_factor
-    type(ESMF_Config)                 :: CF
+    type(ESMF_HConfig)                 :: CF
     integer                           :: status,error_code
     real(ESMF_KIND_R8), pointer :: center_lons(:,:),center_lats(:,:),corner_lons(:,:),corner_lats(:,:)
     type(ESMF_CubedSphereTransform_Args) :: transformArgument
@@ -86,41 +86,31 @@
     _VERIFY(status)
     _ASSERT(npets == 6, "must run on 6 mpi processes")
 
-    CF = ESMF_ConfigCreate(rc=status)
+    cf = ESMF_HConfigCreate(filename='GenScrip.rc',rc=status)
     _VERIFY(STATUS)
-    call ESMF_ConfigLoadFile(CF,filename='GenScrip.rc',rc=status)
-    _VERIFY(STATUS)
-    call ESMF_ConfigGetAttribute(CF, IM_World, Label='CUBE_DIM:',rc=status)
+
+    im_world = ESMF_HConfigAsI4(cf,keyString='CUBE_DIM',rc=status)
     _VERIFY(STATUS)
     JM_WORLD = 6 * IM_WORLD
-    call ESMF_ConfigGetAttribute(CF,gridname, label='gridname:',rc=status)
+    gridname = "cube_grid"
+
+    output_scrip = ESMF_HConfigAsString(cf,keyString='output_scrip',rc=status)
     _VERIFY(STATUS)
-    call ESMF_ConfigGetAttribute(CF,output_scrip, label='output_scrip:',rc=status)
+    output_geos = ESMF_HConfigAsString(cf,keyString='output_geos',rc=status)
     _VERIFY(STATUS)
-    call ESMF_ConfigGetAttribute(CF,output_geos, label='output_geos:',rc=status)
-    _VERIFY(STATUS)
-    call ESMF_ConfigGetAttribute(CF, do_schmidt, Label='DO_SCHMIDT:',Default=.false.,rc=status)
-    _VERIFY(STATUS)
-    call ESMF_ConfigGetAttribute(CF, stretch_factor, Label='STRETCH_FAC:',rc=status)
-    if (status /=0) then 
-       if (do_schmidt) then
-          write(*,*)"Asking for stretch grid without supplying stretch factor"
-          call MPI_Abort(mpiC,error_code,status)
-       end if
+
+    do_schmidt=.false.
+    if (ESMF_HConfigIsDefined(cf,keyString='DO_SCHMIDT')) then
+       do_schmidt = ESMF_HConfigAsLogical(cf,keystring='DO_SCHMIDT',rc=status)
+       _VERIFY(status)
     end if
-    call ESMF_ConfigGetAttribute(CF, target_lon, Label='TARGET_LON:',rc=status)
-    if (status /=0) then 
-       if (do_schmidt) then
-          write(*,*)"Asking for stretch grid without supplying target lon"
-          call MPI_Abort(mpiC,error_code,status)
-       end if
-    end if
-    call ESMF_ConfigGetAttribute(CF, target_lat, Label='TARGET_LAT:',rc=status)
-    if (status /=0) then 
-       if (do_schmidt) then
-          write(*,*)"Asking for stretch grid without supplying target lat"
-          call MPI_Abort(mpiC,error_code,status)
-       end if
+    if (do_schmidt) then
+       target_lon = ESMF_HConfigAsR4(cf,keyString='TARGET_LON',rc=status)
+       _VERIFY(status)
+       target_lat = ESMF_HConfigAsR4(cf,keyString='TARGET_LAT',rc=status)
+       _VERIFY(status)
+       stretch_factor = ESMF_HConfigAsR4(cf,keyString='STRETCH_FACTOR',rc=status)
+       _VERIFY(status)
     end if
 
     allocate(ims(1,6),jms(1,6))
