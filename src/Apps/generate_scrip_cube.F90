@@ -129,9 +129,7 @@
        jms(1,i)=im_world
     enddo
 
-    write(*,*)"bmaa do s: ",do_schmidt
     if (do_schmidt) then
-       write(*,*)"bmaa making schmidt grid"
        transformArgument%stretch_factor = stretch_factor
        transformArgument%target_lon = target_lon * MAPL_PI_R8/180.0d0
        transformArgument%target_lat = target_lat * MAPL_PI_R8/180.0d0 
