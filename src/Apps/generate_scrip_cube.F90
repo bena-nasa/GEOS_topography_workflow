@@ -1,11 +1,10 @@
-#define I_AM_MAIN
-#include "MAPL_Generic.h"
+!#define _VERIFY(A) if(A/=0) write(*,*)__LINE__;call MPI_ABort(MPI_COMM_WORLD,error_code,status)
+#define _VERIFY(A) if(A/=0) call local_abort(A,__LINE__)
 
     program ESMF_GenerateCSGridDescription
 
 ! ESMF Framework module
     use ESMF
-    use MAPL
     use mpi
     use netcdf
     use, intrinsic :: iso_fortran_env, only: REAL64,REAL32
@@ -47,15 +46,11 @@
     integer, allocatable              :: grid_imask(:)
     character(len=ESMF_MAXSTR)        :: gridname, FMT, title
     integer                           :: NPX, NPY
-    integer                           :: isg, ieg
-    integer                           :: jsg, jeg
-    integer                           :: is, ie
-    integer                           :: js, je
     integer                           :: myTile
     integer                           :: npts, tmp, mpiC
     integer                           :: IG, JG
     logical                           :: do_schmidt
-    !real(ESMF_KIND_R8)                :: target_lon, target_lat, stretch_factor
+    real(ESMF_KIND_R8)                :: p1(2),p2(2),p3(2),p4(2)
     real(ESMF_KIND_R4)                :: target_lon, target_lat, stretch_factor
     type(ESMF_HConfig)                 :: CF
     integer                           :: status,error_code
@@ -64,18 +59,15 @@
     character(len=ESMF_MAXPATHLEN) :: output_scrip, output_geos
     type(ESMF_Field) :: field
     type(ESMF_FieldBundle) :: field_bundle
-    type(FieldBundleWriter) :: writer
     type(ESMF_Clock) :: clock
     type(ESMF_Time) :: start_time
     type(ESMF_TimeInterval) :: time_interval
     real(ESMF_KIND_R4), pointer  :: ptr2d(:,:)
-    type(ServerManager) :: io_server
 
     call ESMF_Initialize(logKindFlag=ESMF_LOGKIND_NONE,rc=status)
     _VERIFY(status)
-    call ESMF_CalendarSetDefault(ESMF_CALKIND_GREGORIAN,_RC)
-    call MAPL_Initialize()
-    call io_server%initialize(mpi_comm_world)
+    call ESMF_CalendarSetDefault(ESMF_CALKIND_GREGORIAN,rc=status)
+    _VERIFY(status)
 
     call ESMF_VMGetGlobal(vm, rc=status)
     _VERIFY(status)
@@ -84,7 +76,7 @@
 ! --------------------------------------
     call ESMF_VMGet(vm, localPet=localPet, petCount=npets, mpiCommunicator=mpiC, rc=status)
     _VERIFY(status)
-    _ASSERT(npets == 6, "must run on 6 mpi processes")
+    if (npets /= 6) call local_abort(1,__LINE__)
 
     cf = ESMF_HConfigCreate(filename='GenScrip.rc',rc=status)
     _VERIFY(STATUS)
@@ -121,83 +113,44 @@
 
     if (do_schmidt) then
        transformArgument%stretch_factor = stretch_factor
-       transformArgument%target_lon = target_lon * MAPL_PI_R8/180.0d0
-       transformArgument%target_lat = target_lat * MAPL_PI_R8/180.0d0 
-       dstgrid = grid_manager%make_grid(CubedSphereGridFactory(grid_name=gridname, &
-             nx=1, ny=1, im_world = im_world, stretch_factor = stretch_factor, target_lon=target_lon, target_lat=target_lat))
+       transformArgument%target_lon = target_lon * pi/180.0d0
+       transformArgument%target_lat = target_lat * pi/180.0d0 
+       dstgrid = ESMF_GridCreateCubedSphere(im_world,countsPerDEDim1PTile=ims, &
+            countsPerDEDim2PTile=jms, name='bobo',  &
+            staggerLocList=[ESMF_STAGGERLOC_CENTER,ESMF_STAGGERLOC_CORNER], &
+            transformArgs=transformArgument, &
+            coordSys=ESMF_COORDSYS_SPH_RAD,rc=status)
+            _VERIFY(status)
     else
-       dstgrid = grid_manager%make_grid(CubedSphereGridFactory(grid_name=gridname, &
-             nx=1, ny=1, im_world = im_world))
+       dstgrid = ESMF_GridCreateCubedSphere(im_world,countsPerDEDim1PTile=ims, &
+            countsPerDEDim2PTile=jms, name='bobo', &
+            staggerLocList=[ESMF_STAGGERLOC_CENTER,ESMF_STAGGERLOC_CORNER], &
+            coordSys=ESMF_COORDSYS_SPH_RAD, rc=status)
+            _VERIFY(status)
     end if
-
-  
-    call ESMF_TimeIntervalSet(time_interval,s=3600,rc=status) 
-    _VERIFY(status)
-    call ESMF_TimeSet(start_time,yy=2000,mm=1,dd=1,h=0,m=0,s=0,rc=status) 
-    _VERIFY(status)
-    clock = ESMF_ClockCreate(name="bob",timeStep=time_interval,startTime=start_time,_RC)
-    call ESMF_ClockSet(clock,currtime=start_time,rc=status)
-    _VERIFY(status)
-    field_bundle = ESMF_FieldBundleCreate(name="cubed_sphere_grid",rc=status)
-    _VERIFY(status)
-    field = ESMF_FieldCreate(dstgrid,typekind=ESMF_TYPEKIND_R4,name="example_field",rc=status)
-    _VERIFY(status)
-    call ESMF_FieldGet(field,farrayPtr=ptr2d,rc=status)
-    _VERIFY(status)
-    call ESMF_FieldBundleSet(field_bundle,grid=dstgrid,rc=status)
-    _VERIFY(status)
-    call MAPL_FieldBundleAdd(field_bundle,field,rc=status)
-    _VERIFY(status)
-
-    call writer%create_from_bundle(field_bundle,clock,rc=status)
-    _VERIFY(status)
-    call writer%start_new_file(output_geos,rc=status)
-    _VERIFY(status)
-    call writer%write_to_file(rc=status)
+    call create_file(dstgrid,im_world,output_geos,rc=status)
     _VERIFY(status)
     
     call ESMF_GridGetCoord(dstgrid, coordDim=1, localDE=0, &
         staggerloc=ESMF_STAGGERLOC_CENTER, &
         farrayPtr=center_lons, rc=status)
-        _VERIFY(status)
+    _VERIFY(status)
     call ESMF_GridGetCoord(dstgrid, coordDim=2, localDE=0, &
         staggerloc=ESMF_STAGGERLOC_CENTER, &
         farrayPtr=center_lats, rc=status)
-        _VERIFY(status)
+    _VERIFY(status)
     call ESMF_GridGetCoord(dstgrid, coordDim=1, localDE=0, &
         staggerloc=ESMF_STAGGERLOC_CORNER, &
         farrayPtr=corner_lons, rc=status)
-        _VERIFY(status)
+    _VERIFY(status)
     call ESMF_GridGetCoord(dstgrid, coordDim=2, localDE=0, &
         staggerloc=ESMF_STAGGERLOC_CORNER, &
         farrayPtr=corner_lats, rc=status)
-        _VERIFY(status)
-
-    call MAPL_grid_interior(dstgrid, isg, ieg, jsg, jeg)
-    npx = IM_WORLD
-    npy = JM_WORLD
-    myTile = jsg/(npy/ntiles)
-
-    is = isg
-    ie = ieg
-    js = jsg - myTile*(npy/ntiles)
-    je = jeg - myTile*(npy/ntiles)
-    npts = (npy/ntiles)
-    if (npts /= npx) then
-       print*, 'Error npts /= npx', npts, npx
-       status=1
-    endif
     _VERIFY(status)
-
-    allocate( grid_global(npts+1,npts+1,ndims,ntiles) )
-    grid_global(:,:,1,localPet+1) = corner_lons
-    grid_global(:,:,2,localPet+1) = corner_lats
-
-
-    tmp = (ieg-isg+1)*(jeg-jsg+1)
-    allocate(SCRIP_CenterLat(tmp),stat=status)
-    _VERIFY(status)
+    tmp = im_world*im_world
     allocate(SCRIP_CenterLon(tmp),stat=status)
+    _VERIFY(status)
+    allocate(SCRIP_CenterLat(tmp),stat=status)
     _VERIFY(status)
     allocate(SCRIP_CornerLat(4,tmp),stat=status)
     _VERIFY(status)
@@ -207,37 +160,43 @@
     _VERIFY(status)
 
     n=1
-    do jg=jsg,jeg
-       do ig=isg,ieg
+    do jg=1,im_world
+       do ig=1,im_world
           i=ig
-          j=jg-myTile*npts
-          SCRIP_CenterLon(n) = center_lons(i,j)*(180._8/MAPL_PI_R8)
-          SCRIP_CenterLat(n) = center_lats(i,j)*(180._8/MAPL_PI_R8)
+          j=jg
+          mytile=localPet
+          SCRIP_CenterLon(n) = center_lons(i,j)*(180._8/pi)
+          SCRIP_CenterLat(n) = center_lats(i,j)*(180._8/pi)
 
-          node_xy(1,1:4) = (/grid_global(i  ,j,1,myTile+1),grid_global(i+1,j,1,myTile+1),grid_global(i+1,j+1,1,myTile+1),grid_global(i,j+1,1,myTile+1)/)
-          node_xy(2,1:4) = (/grid_global(i  ,j,2,myTile+1),grid_global(i+1,j,2,myTile+1),grid_global(i+1,j+1,2,myTile+1),grid_global(i,j+1,2,myTile+1)/)
+          !node_xy(1,1:4) = (/grid_global(i  ,j,1,myTile+1),grid_global(i+1,j,1,myTile+1),grid_global(i+1,j+1,1,myTile+1),grid_global(i,j+1,1,myTile+1)/)
+          !node_xy(2,1:4) = (/grid_global(i  ,j,2,myTile+1),grid_global(i+1,j,2,myTile+1),grid_global(i+1,j+1,2,myTile+1),grid_global(i,j+1,2,myTile+1)/)
+          node_xy(1,1:4) = [corner_lons(i  ,j),corner_lons(i+1,j),corner_lons(i+1,j+1),corner_lons(i,j+1)]
+          node_xy(2,1:4) = [corner_lats(i  ,j),corner_lats(i+1,j),corner_lats(i+1,j+1),corner_lats(i,j+1)]
           node_xy_tmp = node_xy
 
 ! Correct for the periodic boundary at 0/360
 ! ------------------------------------------
-          lon_w = min( grid_global(i  ,j,1,myTile+1),grid_global(i+1,j,1,myTile+1),grid_global(i+1,j+1,1,myTile+1),grid_global(i,j+1,1,myTile+1) ) 
-          lon_e = max( grid_global(i  ,j,1,myTile+1),grid_global(i+1,j,1,myTile+1),grid_global(i+1,j+1,1,myTile+1),grid_global(i,j+1,1,myTile+1) ) 
-          if ( abs(lon_e - lon_w) > 1.5_8*MAPL_PI_R8 .and. (SCRIP_CenterLon(n) < MAPL_PI_R8) ) then
-             where(node_xy(1,:) > MAPL_PI_R8) node_xy_tmp(1,:) = node_xy(1,:) - 2._8*MAPL_PI_R8
-          elseif ( abs(lon_e - lon_w) > 1.5_8*MAPL_PI_R8 .and. (SCRIP_CenterLon(n) > MAPL_PI_R8) ) then
-             where(node_xy(1,:) < MAPL_PI_R8) node_xy_tmp(1,:) = node_xy(1,:) + 2._8*MAPL_PI_R8
+          lon_w = min( corner_lons(i  ,j),corner_lons(i+1,j),corner_lons(i+1,j+1),corner_lons(i,j+1) )
+          lon_e = max( corner_lons(i  ,j),corner_lons(i+1,j),corner_lons(i+1,j+1),corner_lons(i,j+1) )
+          if ( abs(lon_e - lon_w) > 1.5_8*pi .and. (SCRIP_CenterLon(n) < pi) ) then
+             where(node_xy(1,:) > pi) node_xy_tmp(1,:) = node_xy(1,:) - 2._8*pi
+          elseif ( abs(lon_e - lon_w) > 1.5_8*pi .and. (SCRIP_CenterLon(n) > pi) ) then
+             where(node_xy(1,:) < pi) node_xy_tmp(1,:) = node_xy(1,:) + 2._8*pi
           endif
           call points_hull_2d(4, node_xy_tmp, hull_num, hull)
           if(ANY(hull==0)) then
-             write(*,100)'Zero Hull ', grid_global(i  ,j,1,myTile+1),grid_global(i+1,j,1,myTile+1),grid_global(i+1,j+1,1,myTile+1),grid_global(i,j+1,1,myTile+1)
+             write(*,100)'Zero Hull ', corner_lons(i  ,j),corner_lons(i+1,j),corner_lons(i+1,j+1),corner_lons(i,j+1)
              write(*,100)'Zero Hull ', node_xy_tmp(1,:)
           endif
           do k=1,4
-            SCRIP_CornerLon(k,n) = node_xy(1,hull(k))*(180._8/MAPL_PI_R8)
-            SCRIP_CornerLat(k,n) = node_xy(2,hull(k))*(180._8/MAPL_PI_R8) 
+            SCRIP_CornerLon(k,n) = node_xy(1,hull(k))*(180._8/pi)
+            SCRIP_CornerLat(k,n) = node_xy(2,hull(k))*(180._8/pi) 
           enddo
-          SCRIP_Area(n) = get_area_spherical_polygon(grid_global(i  ,j  ,1:2,myTile+1), grid_global(i,j+1  ,1:2,myTile+1),   &
-                            grid_global(i+1,j,1:2,myTile+1), grid_global(i+1,j+1,1:2,myTile+1))
+          p1 = [corner_lons(i,j),corner_lats(i,j)]
+          p2 = [corner_lons(i,j+1),corner_lats(i,j+1)]
+          p3 = [corner_lons(i+1,j),corner_lats(i+1,j)]
+          p4 = [corner_lons(i+1,j+1),corner_lats(i+1,j+1)]
+          SCRIP_Area(n) = get_area_spherical_polygon(p1,p2,p3,p4)
           n=n+1
        enddo
     enddo
@@ -247,7 +206,6 @@
  102     format(2f20.15)
  103     format(a)
 
-    deallocate( grid_global )
     deallocate( IMS )
     deallocate( JMS )
 
@@ -385,9 +343,8 @@
     deallocate(recvCounts)
     deallocate(recvOffsets)
 
-    call io_server%finalize()
-    call MAPL_Finalize(_RC)
-    call ESMF_Finalize ( _RC )
+    call ESMF_Finalize ( rc=status)
+    _VERIFY(status)
 
     contains
 
@@ -640,6 +597,177 @@ subroutine points_hull_2d ( node_num, node_xy, hull_num, hull )
   end do
 
   return
-end
+end subroutine
+
+subroutine create_file(grid,im_world,filename,rc)
+   type(ESMF_Grid), intent(in) :: grid
+   integer, intent(in) :: im_world
+   character(len=*), intent(in) :: filename
+   integer, intent(out), optional :: rc
+
+   integer :: status
+   real(ESMF_KIND_R8), pointer :: coords(:,:)
+
+   integer :: ncid,info,lat_id,lon_id,clat_id,clon_id,nf_id,x_id,y_id,rank
+   integer :: xp1_id,yp1_id
+
+
+   call MPI_Info_create(info, status)
+   _VERIFY(status)
+   call MPI_Info_set(info, "cb_buffer_size", "1048576", status)
+   _VERIFY(status)
+
+   status = nf90_create(filename,NF90_NETCDF4,ncid,comm=MPI_COMM_WORLD,info=info)
+   _VERIFY(status)
+   
+   status = nf90_def_dim(ncid,"nf",6,nf_id)
+   _VERIFY(status)
+   status = nf90_def_dim(ncid,"Xdim",im_world,x_id)
+   _VERIFY(status)
+   status = nf90_def_dim(ncid,"Ydim",im_world,y_id)
+   _VERIFY(status)
+   status = nf90_def_dim(ncid,"XCdim",im_world+1,xp1_id)
+   _VERIFY(status)
+   status = nf90_def_dim(ncid,"YCdim",im_world+1,yp1_id)
+   _VERIFY(status)
+
+   status = nf90_def_var(ncid,"lons",NF90_DOUBLE,[nf_id,x_id,y_id],lon_id)
+   _VERIFY(status)
+   status = nf90_def_var(ncid,"lats",NF90_DOUBLE,[nf_id,x_id,y_id],lat_id)
+   _VERIFY(status)
+   status = nf90_def_var(ncid,"corner_lons",NF90_DOUBLE,[nf_id,xp1_id,yp1_id],clon_id)
+   _VERIFY(status)
+   status = nf90_def_var(ncid,"corner_lats",NF90_DOUBLE,[nf_id,xp1_id,yp1_id],clat_id)
+   _VERIFY(status)
+
+   call MPI_COMM_RANK(MPI_COMM_WORLD,rank,status)
+   call ESMF_GridGetCoord(grid, coordDim=1, localDE=0, &
+       staggerloc=ESMF_STAGGERLOC_CENTER, &
+       farrayPtr=coords, rc=status)
+   _VERIFY(status)
+   status = NF90_put_var(ncid,lon_id,coords,start=[rank+1,1,1],count=[1,im_world,im_world])
+   _VERIFY(status)
+   call ESMF_GridGetCoord(grid, coordDim=2, localDE=0, &
+       staggerloc=ESMF_STAGGERLOC_CENTER, &
+       farrayPtr=coords, rc=status)
+   _VERIFY(status)
+   status = NF90_put_var(ncid,lat_id,coords,start=[rank+1,1,1],count=[1,im_world,im_world])
+   _VERIFY(status)
+   call ESMF_GridGetCoord(grid, coordDim=1, localDE=0, &
+       staggerloc=ESMF_STAGGERLOC_CORNER, &
+       farrayPtr=coords, rc=status)
+   _VERIFY(status)
+   status = NF90_put_var(ncid,clon_id,coords,start=[rank+1,1,1],count=[1,im_world+1,im_world+1])
+   _VERIFY(status)
+   call ESMF_GridGetCoord(grid, coordDim=2, localDE=0, &
+       staggerloc=ESMF_STAGGERLOC_CORNER, &
+       farrayPtr=coords, rc=status)
+   _VERIFY(status)
+   status = NF90_put_var(ncid,clat_id,coords,start=[rank+1,1,1],count=[1,im_world+1,im_world+1])
+   _VERIFY(status)
+
+
+   end subroutine   
+
+
+ function get_area_spherical_polygon(p1,p4,p2,p3) result(area)
+    real(REAL64), parameter           :: PI = 3.14159265358979323846
+    real(real64) :: area
+    real(real64), intent(in) :: p1(2),p2(2),p3(2),p4(2)
+
+    real(real64) :: e1(3),e2(3),e3(3)
+    real(real64) :: ang1,ang2,ang3,ang4
+
+    e1 = convert_to_cart(p1)
+    e2 = convert_to_cart(p2)
+    e3 = convert_to_cart(p4)
+    ang1 = spherical_angles(e1, e2, e3)
+
+    e1 = convert_to_cart(p2)
+    e2 = convert_to_cart(p3)
+    e3 = convert_to_cart(p1)
+    ang2 = spherical_angles(e1, e2, e3)
+
+    e1 = convert_to_cart(p3)
+    e2 = convert_to_cart(p4)
+    e3 = convert_to_cart(p2)
+    ang3 = spherical_angles(e1, e2, e3)
+
+    e1 = convert_to_cart(p4)
+    e2 = convert_to_cart(p3)
+    e3 = convert_to_cart(p1)
+    ang4 = spherical_angles(e1, e2, e3)
+
+    area = ang1 + ang2 + ang3 + ang4 - 2.0d0*PI
+
+ end function get_area_spherical_polygon
+
+ function convert_to_cart(v) result(xyz)
+    real(real64), intent(in) :: v(2)
+    real(real64) :: xyz(3)
+
+    xyz(1)=cos(v(2))*cos(v(1))
+    xyz(2)=cos(v(2))*sin(v(1))
+    xyz(3)=sin(v(2))
+
+ end function convert_to_cart
+
+function spherical_angles(p1,p2,p3) result(spherical_angle)
+   real(real64) :: spherical_angle
+   real(real64), intent(in) :: p1(3),p2(3),p3(3)
+
+   real (real64):: e1(3), e2(3), e3(3)
+   real (real64):: px, py, pz
+   real (real64):: qx, qy, qz
+   real (real64):: angle, ddd
+   integer n
+   real(REAL64), parameter           :: PI = 3.14159265358979323846
+
+   do n=1,3
+      e1(n) = p1(n)
+      e2(n) = p2(n)
+      e3(n) = p3(n)
+   enddo
+
+   !-------------------------------------------------------------------
+   ! Page 41, Silverman's book on Vector Algebra; spherical trigonmetry
+   !-------------------------------------------------------------------
+   ! Vector P:
+   px = e1(2)*e2(3) - e1(3)*e2(2)
+   py = e1(3)*e2(1) - e1(1)*e2(3)
+   pz = e1(1)*e2(2) - e1(2)*e2(1)
+   ! Vector Q:
+   qx = e1(2)*e3(3) - e1(3)*e3(2)
+   qy = e1(3)*e3(1) - e1(1)*e3(3)
+   qz = e1(1)*e3(2) - e1(2)*e3(1)
+
+   ddd = (px*px+py*py+pz*pz)*(qx*qx+qy*qy+qz*qz)
+
+   if ( ddd <= 0.0d0 ) then
+      angle = 0.d0
+   else
+      ddd = (px*qx+py*qy+pz*qz) / sqrt(ddd)
+      if ( abs(ddd)>1.d0) then
+         angle = 0.5d0 * PI
+         if (ddd < 0.d0) then
+            angle = PI
+         else
+            angle = 0.d0
+         end if
+      else
+         angle = acos( ddd )
+      endif
+   endif
+
+   spherical_angle = angle
+end function
+
+subroutine local_abort(rc,line_number)
+   integer, intent(in) :: rc
+   integer, intent(in) :: line_number
+   integer :: status, error_code
+   write(*,*)"aborted on with stat ",line_number,rc
+   call MPI_Abort(MPI_COMM_WORLD,error_code,status)
+end subroutine
 
     end program ESMF_GenerateCSGridDescription
