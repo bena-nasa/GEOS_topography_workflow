@@ -5,7 +5,8 @@ import sys
 import argparse
 import subprocess as sp
 
-_TopoPackage_  = "/home/bmauer/swdev/models/topo_workflow/GEOS_topography_workflow/install/bin"
+#_TopoPackage_  = "/home/bmauer/swdev/models/topo_workflow/GEOS_topography_workflow/install/bin"
+_TopoPackage_  = "/home/bmauer/swdev/packages/latest_ufs_utils/UFS_UTILS/install/bin"
 _c3000file_    = "output_3000.gmted_fixedanarticasuperior.nc"
 
 def _add_zero_str(tres):
@@ -35,6 +36,7 @@ def _bin_to_cube(topo):
    f = open("bin_to_cube.nl",'w')
    f.write(nl_file)
    f.close()
+   os.system("cp bin_to_cube.nl ~/noback/tmp/bin_to_cube.nl")
 
    os.system("ln -fs "+_TopoPackage_+"/landm_coslat.nc .")
    os.system(_TopoPackage_+"/bin_to_cube.x")
@@ -73,6 +75,7 @@ def _cube_to_target(tres,smooth_file):
    f = open("cube_to_target.nl","w")
    f.write(nl_file)
    f.close()
+   os.system("cp cube_to_target.nl ~/noback/tmp/cube_to_target.nl")
    os.system(_TopoPackage_+"/cube_to_target.x")
    return output_fname
 
@@ -80,30 +83,34 @@ def _convert_to_gmao(tres,output_fname):
    print("bma converting ",output_fname)
    os.system(_TopoPackage_+"/convert_to_gmao_output.x -i "+output_fname+" --im "+tres)
 
-def _do_smoothing(tres):
+def _do_smoothing(tres,workdir):
 
-   smooth_bin = "/gpfsm/dswdev/bmauer/packages/UFS_UTILS/install/bin"
-   grid_descrip_dir = "/discover/nobackup/bmauer/Cubed_Sphere_Grids_new_stretched_geosformat"
-   mosaic_def_dir = "/discover/nobackup/bmauer/tmp/ufs_stretched_grids/my_grids"
+   mosaic_def_dir = workdir
   
    im = int(tres)
    jm = im*6
    # tile orography
    inputf = "gmted_DYN_ave_"+str(im)+"x"+str(jm)+".data"
    output_prefix = "oro.C"+tres
-   run_cmd = smooth_bin+"/mosaic_topo.py" + " -i "+inputf+" -o "+output_prefix+" -c "+tres
-   print(run_cmd)
-   sp.call(run_cmd,shell=True)
+   run_cmd = _TopoPackage_+"/mosaic_topo.py" + " -i "+inputf+" -o "+output_prefix+" -c "+tres
+   sp.call(run_cmd,shell=True,universal_newlines=True)
 
    # tile grid
-   inputf = grid_descrip_dir+"/c"+tres+"_coords.nc4"
-   output_prefix = "C"+tres+"_grid"
-   run_cmd = smooth_bin+"/mosaic_grid.py" + " -i "+inputf+" -o "+output_prefix
-   sp.call(run_cmd,shell=True)
+   #inputf = grid_descrip_dir+"/c"+tres+"_coords.nc4"
+   inputf = workdir+"/c"+tres+"_coords.nc4"
+   output_prefix = workdir+"/C"+tres+"_grid"
+   run_cmd = _TopoPackage_+"/mosaic_grid.py" + " -i "+inputf+" -o "+output_prefix
+   sp.call(run_cmd,shell=True,universal_newlines=True)
+  
+   # main tile file
+   run_cmd = _TopoPackage_+"/create_mosaic.py" + " -r "+tres+" -o "+"main_mosaic.nc"
+   sp.call(run_cmd,shell=True,universal_newlines=True)
+
 
    # run smoother
    nl_file="&filter_topo_nml\n"
-   nl_file=nl_file+"  grid_file = '"+mosaic_def_dir+"/C"+tres+"/C"+tres+"_mosaic.nc'\n"
+   #nl_file=nl_file+"  grid_file = '"+mosaic_def_dir+"/C"+tres+"/C"+tres+"_mosaic.nc'\n"
+   nl_file=nl_file+"  grid_file = 'main_mosaic.nc'\n"
    nl_file=nl_file+"  topo_file = 'oro.C"+tres+"'\n"
    nl_file=nl_file+"  mask_field = 'land_frac'\n"
    nl_file=nl_file+"  regional = .false.\n"
@@ -114,15 +121,18 @@ def _do_smoothing(tres):
    f.write(nl_file)
    f.close()
 
-   run_cmd = smooth_bin+"/filter_topo"
+   print("running UFS smoothing")
+   run_cmd = _TopoPackage_+"/filter_topo"
    sp.call(run_cmd,shell=True)
    foutput_format=_add_zero_str(tres)
+   print("finished UFS smoothing")
+   #return #bmaa
 
    # convert back to form we know
    input_prefix = "oro.C"+tres
    #output_file = "topo_DYN_ave_"+foutput_format+".bin"
    output_file = "smooth_ncarformat_c"+tres+".nc"
-   run_cmd = smooth_bin+"/combineMosaic.py" + " -i "+input_prefix+" -o "+output_file
+   run_cmd = _TopoPackage_+"/combineMosaic.py" + " -i "+input_prefix+" -o "+output_file
    sp.call(run_cmd,shell=True)
   
    return output_file
@@ -149,11 +159,13 @@ if __name__ == "__main__":
    parser.add_argument("--hres_topo",dest="hres_topo",help="high resoution topography")
    parser.add_argument("--outputdir",dest="outputdir",help="output directory")
    parser.add_argument("--topo_install",dest="topo_install",help="installation directory of topo packge")
+   parser.add_argument("--workdir",dest="workdir",help="installation directory of topo packge")
 
    options = parser.parse_args()
    tres      = options.tres
    hres_topo = options.hres_topo
    outputdir = options.outputdir
+   workdir   = options.workdir
    _TopoPackage_ = options.topo_install
 
    _bin_to_cube(hres_topo)
@@ -167,10 +179,7 @@ if __name__ == "__main__":
    _convert_to_gmao(tres,output_fname)
 
    print("smoothing topography\n")
-   #output_fname = _do_smoothing(tres)
-   ncar_file = _do_smoothing(tres)
-
-   #ncar_file = _convert_to_ncar(tres,output_fname)
+   ncar_file = _do_smoothing(tres,workdir)
 
    if not os.path.exists(outputdir+"/unsmoothed"):
       os.mkdir(outputdir+"/unsmoothed")
@@ -183,5 +192,4 @@ if __name__ == "__main__":
    if not os.path.exists(outputdir+"/smoothed"):
       os.mkdir(outputdir+"/smoothed")
    _copy_final_geosoutput(outputdir+"/smoothed",tres)
-
 

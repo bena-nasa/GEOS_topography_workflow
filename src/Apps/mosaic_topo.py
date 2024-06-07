@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from yaml import safe_load, load, dump
 from netCDF4 import Dataset
@@ -23,7 +23,6 @@ rec = f.read_reals(dtype=np.float32)
 
 im=int(comm_args['csize'])
 topo=np.zeros([6,im,im])
-mask=np.zeros([6,im,im])
 
 icnt=0
 for n in range(6):
@@ -42,7 +41,8 @@ for n in range(6):
    orog = ncfid.createVariable('orog_filt','f4',('nx','ny'))
    mask = ncfid.createVariable('land_frac','f4',('nx','ny'))
    orog[:,:]=topo[n,:,:]
-   mask[:]=1
+   #orog[:,:]=topo[n,:,:]*9.80665
+   mask[:,:]=1
    ncfid.close()
 
 

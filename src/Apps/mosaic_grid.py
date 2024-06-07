@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from netCDF4 import Dataset
 import numpy as np
@@ -39,16 +39,31 @@ for n in range(6):
    xdimc=ncfid.createDimension('nxp',nxp)
    ydimc=ncfid.createDimension('nyp',nyp)
 
+   tdim=ncfid.createDimension('string',255)
+   tile = ncfid.createVariable('tile','S1',('string'))
+   setattr(tile,'standard_name','grid_tile_spec')
+   setattr(tile,'geometry','spherical')
+   setattr(tile,'north_pole','0.0 90.0')
+   setattr(tile,'projection','cube_gnomonic')
+   setattr(tile,'discretization','logically_rectangular')
+   setattr(tile,'conformal','FALSE')
+   tile[0] = 't'
+   tile[1] = 'i'
+   tile[2] = 'l'
+   tile[3] = 'e'
+   tile[4] = str(n+1)
+
+
    x = ncfid.createVariable('x','f8',('nyp','nxp'))
    setattr(x,'standard_name','geographic_longitude')
    setattr(x,'units','degree_east')
    y = ncfid.createVariable('y','f8',('nyp','nxp'))
-   setattr(x,'standard_name','geographic_latitude')
-   setattr(x,'units','degree_north')
-   x[0:nx+1:2,0:nx+1:2]  = lon_c[n,:,:]
-   y[0:nx+1:2,0:nx+1:2]  = lat_c[n,:,:]
-   x[1:nx:2,1:nx:2]  = lon[n,:,:]
-   y[1:nx:2,1:nx:2]  = lat[n,:,:]
+   setattr(y,'standard_name','geographic_latitude')
+   setattr(y,'units','degree_north')
+   x[0:nx+1:2,0:nx+1:2]  = lon_c[:,:,n]
+   y[0:nx+1:2,0:nx+1:2]  = lat_c[:,:,n]
+   x[1:nx:2,1:nx:2]  = lon[:,:,n]
+   y[1:nx:2,1:nx:2]  = lat[:,:,n]
    ncfid.close()
 
 

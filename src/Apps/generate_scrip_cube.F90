@@ -128,7 +128,7 @@
             coordSys=ESMF_COORDSYS_SPH_RAD, rc=status)
             _VERIFY(status)
     end if
-    call create_file(dstgrid,im_world,output_geos,rc=status)
+    call create_gmao_file(dstgrid,im_world,output_geos,rc=status)
     _VERIFY(status)
     
     call ESMF_GridGetCoord(dstgrid, coordDim=1, localDE=0, &
@@ -188,9 +188,13 @@
              write(*,100)'Zero Hull ', corner_lons(i  ,j),corner_lons(i+1,j),corner_lons(i+1,j+1),corner_lons(i,j+1)
              write(*,100)'Zero Hull ', node_xy_tmp(1,:)
           endif
+          !do k=1,4
+            !SCRIP_CornerLon(k,n) = node_xy(1,hull(k))*(180._8/pi)
+            !SCRIP_CornerLat(k,n) = node_xy(2,hull(k))*(180._8/pi) 
+          !enddo
           do k=1,4
-            SCRIP_CornerLon(k,n) = node_xy(1,hull(k))*(180._8/pi)
-            SCRIP_CornerLat(k,n) = node_xy(2,hull(k))*(180._8/pi) 
+            SCRIP_CornerLon(k,n) = node_xy(1,k)*(180._8/pi)
+            SCRIP_CornerLat(k,n) = node_xy(2,k)*(180._8/pi) 
           enddo
           p1 = [corner_lons(i,j),corner_lats(i,j)]
           p2 = [corner_lons(i,j+1),corner_lats(i,j+1)]
@@ -599,7 +603,7 @@ subroutine points_hull_2d ( node_num, node_xy, hull_num, hull )
   return
 end subroutine
 
-subroutine create_file(grid,im_world,filename,rc)
+subroutine create_gmao_file(grid,im_world,filename,rc)
    type(ESMF_Grid), intent(in) :: grid
    integer, intent(in) :: im_world
    character(len=*), intent(in) :: filename
@@ -610,6 +614,7 @@ subroutine create_file(grid,im_world,filename,rc)
 
    integer :: ncid,info,lat_id,lon_id,clat_id,clon_id,nf_id,x_id,y_id,rank
    integer :: xp1_id,yp1_id
+   real(ESMF_KIND_R8), allocatable :: temp_var(:,:)
 
 
    call MPI_Info_create(info, status)
@@ -631,40 +636,50 @@ subroutine create_file(grid,im_world,filename,rc)
    status = nf90_def_dim(ncid,"YCdim",im_world+1,yp1_id)
    _VERIFY(status)
 
-   status = nf90_def_var(ncid,"lons",NF90_DOUBLE,[nf_id,x_id,y_id],lon_id)
+   status = nf90_def_var(ncid,"lons",NF90_DOUBLE,[x_id,y_id,nf_id],lon_id)
    _VERIFY(status)
-   status = nf90_def_var(ncid,"lats",NF90_DOUBLE,[nf_id,x_id,y_id],lat_id)
+   status = nf90_def_var(ncid,"lats",NF90_DOUBLE,[x_id,y_id,nf_id],lat_id)
    _VERIFY(status)
-   status = nf90_def_var(ncid,"corner_lons",NF90_DOUBLE,[nf_id,xp1_id,yp1_id],clon_id)
+   status = nf90_def_var(ncid,"corner_lons",NF90_DOUBLE,[xp1_id,yp1_id,nf_id],clon_id)
    _VERIFY(status)
-   status = nf90_def_var(ncid,"corner_lats",NF90_DOUBLE,[nf_id,xp1_id,yp1_id],clat_id)
+   status = nf90_def_var(ncid,"corner_lats",NF90_DOUBLE,[xp1_id,yp1_id,nf_id],clat_id)
    _VERIFY(status)
 
    call MPI_COMM_RANK(MPI_COMM_WORLD,rank,status)
+   ! centers
    call ESMF_GridGetCoord(grid, coordDim=1, localDE=0, &
        staggerloc=ESMF_STAGGERLOC_CENTER, &
        farrayPtr=coords, rc=status)
    _VERIFY(status)
-   status = NF90_put_var(ncid,lon_id,coords,start=[rank+1,1,1],count=[1,im_world,im_world])
+   allocate(temp_var(im_world,im_world))
+   temp_var = coords*180.d0/pi
+   status = NF90_put_var(ncid,lon_id,temp_var,start=[1,1,rank+1],count=[im_world,im_world,1])
    _VERIFY(status)
    call ESMF_GridGetCoord(grid, coordDim=2, localDE=0, &
        staggerloc=ESMF_STAGGERLOC_CENTER, &
        farrayPtr=coords, rc=status)
    _VERIFY(status)
-   status = NF90_put_var(ncid,lat_id,coords,start=[rank+1,1,1],count=[1,im_world,im_world])
+   temp_var = coords*180.d0/pi
+   status = NF90_put_var(ncid,lat_id,temp_var,start=[1,1,rank+1],count=[im_world,im_world,1])
    _VERIFY(status)
+   deallocate(temp_var)
+   ! corners
    call ESMF_GridGetCoord(grid, coordDim=1, localDE=0, &
        staggerloc=ESMF_STAGGERLOC_CORNER, &
        farrayPtr=coords, rc=status)
    _VERIFY(status)
-   status = NF90_put_var(ncid,clon_id,coords,start=[rank+1,1,1],count=[1,im_world+1,im_world+1])
+   allocate(temp_var(im_world+1,im_world+1))
+   temp_var = coords*180.d0/pi
+   status = NF90_put_var(ncid,clon_id,temp_var,start=[1,1,rank+1],count=[im_world+1,im_world+1,1])
    _VERIFY(status)
    call ESMF_GridGetCoord(grid, coordDim=2, localDE=0, &
        staggerloc=ESMF_STAGGERLOC_CORNER, &
        farrayPtr=coords, rc=status)
    _VERIFY(status)
-   status = NF90_put_var(ncid,clat_id,coords,start=[rank+1,1,1],count=[1,im_world+1,im_world+1])
+   temp_var = coords*180.d0/pi
+   status = NF90_put_var(ncid,clat_id,temp_var,start=[1,1,rank+1],count=[im_world+1,im_world+1,1])
    _VERIFY(status)
+   deallocate(temp_var)
 
 
    end subroutine   

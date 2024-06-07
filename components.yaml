@@ -15,8 +15,3 @@ ecbuild:
   remote: git@github.com:GEOS-ESM/ecbuild.git
   tag: geos/v1.3.0
 
-MAPL:
-  local: ./src/@MAPL
-  remote: git@github.com:GEOS-ESM/MAPL.git
-  tag: v2.44.0
-  develop: develop
