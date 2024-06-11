@@ -5,8 +5,6 @@ import sys
 import argparse
 import subprocess as sp
 
-#_TopoPackage_  = "/home/bmauer/swdev/models/topo_workflow/GEOS_topography_workflow/install/bin"
-_TopoPackage_  = "/home/bmauer/swdev/packages/latest_ufs_utils/UFS_UTILS/install/bin"
 _c3000file_    = "output_3000.gmted_fixedanarticasuperior.nc"
 
 def _add_zero_str(tres):
@@ -36,7 +34,6 @@ def _bin_to_cube(topo):
    f = open("bin_to_cube.nl",'w')
    f.write(nl_file)
    f.close()
-   os.system("cp bin_to_cube.nl ~/noback/tmp/bin_to_cube.nl")
 
    os.system("ln -fs "+_TopoPackage_+"/landm_coslat.nc .")
    os.system(_TopoPackage_+"/bin_to_cube.x")
@@ -75,7 +72,6 @@ def _cube_to_target(tres,smooth_file):
    f = open("cube_to_target.nl","w")
    f.write(nl_file)
    f.close()
-   os.system("cp cube_to_target.nl ~/noback/tmp/cube_to_target.nl")
    os.system(_TopoPackage_+"/cube_to_target.x")
    return output_fname
 

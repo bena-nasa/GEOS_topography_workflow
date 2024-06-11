@@ -30,9 +30,9 @@ install(PROGRAMS mosaic_topo.py DESTINATION bin)
 install(PROGRAMS combineMosaic.py DESTINATION bin)
 install(PROGRAMS create_mosaic.py DESTINATION bin)
 install(PROGRAMS scrip_to_cube.py DESTINATION bin)
-install(PROGRAMS scrip_to_restart.py.py DESTINATION bin)
+install(PROGRAMS scrip_to_restart.py DESTINATION bin)
 install(PROGRAMS run_topo_generation.py DESTINATION bin)
-install(PROGRAMS make_topo.csh DESTINATION bin)
+install(PROGRAMS make_topo.sh DESTINATION bin)
 
 
 esma_add_subdirectories(
